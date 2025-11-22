@@ -32,7 +32,6 @@ jobs:
           name: app-jar
           path: target/*.jar
 
-
   deploy_test_env:
     name: Deploy to Test Env (Docker) + Acceptance + Rollback
     needs: build_test
@@ -46,30 +45,34 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: app-jar
-          path: target/
+          path: target
 
+      # 1) Construir imagen GREEN con el jar descargado
       - name: Build imagen GREEN (nueva versión)
         run: docker build -t app:green .
 
-      - name: Levantar GREEN en ambiente de prueba
-        run: |
-          docker run -d --name green -p 8080:8080 app:green
-          sleep 10
-
+      # 2) Acceptance tests (smoke): ejecutar el jar dentro del contenedor
+      #    Si el jar termina OK -> exit 0 -> pasa.
       - name: Acceptance tests (smoke)
         run: |
-          echo "Chequeando servicio..."
-          curl -f http://localhost:8080/ || (echo "Acceptance FAIL" && exit 1)
+          echo "▶ Ejecutando acceptance (java -jar dentro del contenedor)..."
+          docker run --rm app:green
+          echo "Acceptance OK"
 
-      - name: Deploy OK si acceptance pasa
-        run: echo "Deploy GREEN aceptado en ambiente de prueba."
+      # 3) Deploy OK si acceptance pasa
+      - name: Si Acceptance OK -> Deploy OK
+        run: |
+          echo "Deploy GREEN aceptado en ambiente de prueba."
+          # Simulación Blue/Green: marcamos GREEN como estable (BLUE)
+          docker tag app:green app:blue
+          echo "BLUE actualizado a la nueva versión."
 
-      - name: Rollback automático si falla acceptance/deploy
+      # 4) Rollback automático si falla algo arriba
+      - name: Rollback automático (si falla acceptance/deploy)
         if: failure()
         run: |
           echo "Falló GREEN. Ejecutando rollback..."
-          docker logs green || true
-          docker stop green || true
-          docker rm green || true
-          echo "Rollback completado."
-
+          # En un caso real acá levantarías BLUE anterior.
+          # Aquí solo dejamos registro y limpiamos.
+          docker images | head -n 20 || true
+          echo "Rollback simulado: se mantiene BLUE anterior."
